@@ -1,0 +1,42 @@
+name: OJS 3.4 source checks
+on:
+  pull_request:
+    branches: [stable-3_4_0]
+  push:
+    branches: [stable-3_4_0]
+permissions:
+  contents: read
+jobs:
+  ojs34-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+      - name: Lint plugin PHP
+        run: |
+          php -l index.php
+          php -l DoiInSummaryPlugin.inc.php
+      - name: Validate OJS 3.4 identity, release, and locales
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          from xml.etree import ElementTree as ET
+          root = ET.parse('version.xml').getroot()
+          assert root.findtext('application') == 'doiInSummary'
+          assert root.findtext('release') == '2.0.0.1'
+          assert root.findtext('type') == 'plugins.generic'
+          assert Path('index.php').read_text().find("DoiInSummaryPlugin.inc.php") != -1
+          plugin = Path('DoiInSummaryPlugin.inc.php').read_text()
+          assert "class DoiInSummaryPlugin extends GenericPlugin" in plugin
+          assert 'HookRegistry::register' in plugin
+          assert Path('templates/doi_summary.tpl').exists()
+          assert Path('styles/doi.css').exists()
+          def keys(path):
+              return set(re.findall(r'^msgid "(plugins\.generic\.doiInSummary\.[^"]+)"', Path(path).read_text(), re.M))
+          assert keys('locale/en/locale.po') == keys('locale/fa/locale.po')
+          assert len(keys('locale/fa/locale.po')) == 2
+          assert 'Language: fa' in Path('locale/fa/locale.po').read_text()
+          PY
